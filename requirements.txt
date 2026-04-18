@@ -1,0 +1,10 @@
+# NY DOS Business Entity Scraper — Python dependencies
+
+# Apify SDK
+apify>=2.3.0,<3.0.0
+
+# Playwright for browser automation (required since the site blocks direct API calls)
+playwright>=1.44.0,<2.0.0
+
+# Optional: faster async HTTP client (used if we discover a direct API endpoint)
+httpx[http2]>=0.27.0,<1.0.0

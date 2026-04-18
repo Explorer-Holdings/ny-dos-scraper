@@ -1,0 +1,140 @@
+{
+    "title": "NY DOS Business Entity Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "searchBy": {
+            "title": "Search By",
+            "type": "string",
+            "description": "Choose the field to search entities by.",
+            "editor": "select",
+            "enum": ["entityName", "dosId", "assumedName", "assumedNameId"],
+            "enumTitles": ["Entity Name", "DOS ID", "Assumed Name", "Assumed Name ID"],
+            "default": "entityName"
+        },
+        "nameSearch": {
+            "title": "Name / ID Search",
+            "type": "string",
+            "description": "Entity name, DOS ID, or assumed name to search for. Leave blank to retrieve all entities of a given type (slow — alphabetical sweep is used).",
+            "editor": "textfield"
+        },
+        "nameType": {
+            "title": "Active Only",
+            "type": "boolean",
+            "description": "When enabled, only searches active entity names. When disabled, searches both active and inactive names.",
+            "default": false
+        },
+        "searchType": {
+            "title": "Search Type",
+            "type": "string",
+            "description": "How to match the entity name: begins with the text, contains the text anywhere, or sounds like it (phonetic).",
+            "editor": "select",
+            "enum": ["BEGINS_WITH", "CONTAINS", "SOUNDS_LIKE"],
+            "enumTitles": ["Begins With", "Contains", "Sounds Like (Phonetic)"],
+            "default": "BEGINS_WITH"
+        },
+        "entityType": {
+            "title": "Entity Type",
+            "type": "string",
+            "description": "Filter results by business entity type. Leave blank for all types.",
+            "editor": "select",
+            "enum": [
+                "",
+                "DOMESTIC BUSINESS CORP",
+                "FOREIGN BUSINESS CORP",
+                "DOMESTIC NOT-FOR-PROFIT CORP",
+                "FOREIGN NOT-FOR-PROFIT CORP",
+                "DOMESTIC LIMITED LIABILITY COMPANY",
+                "FOREIGN LIMITED LIABILITY COMPANY",
+                "DOMESTIC LIMITED PARTNERSHIP",
+                "FOREIGN LIMITED PARTNERSHIP",
+                "DOMESTIC LIMITED LIABILITY PARTNERSHIP",
+                "FOREIGN LIMITED LIABILITY PARTNERSHIP",
+                "DOMESTIC PROFESSIONAL CORPORATION",
+                "FOREIGN PROFESSIONAL CORPORATION",
+                "DOMESTIC PROFESSIONAL SERVICE LLC",
+                "FOREIGN PROFESSIONAL SERVICE LLC",
+                "BENEFIT CORPORATION",
+                "FOREIGN BENEFIT CORPORATION",
+                "REAL ESTATE INVESTMENT TRUST",
+                "FOREIGN REAL ESTATE INVESTMENT TRUST"
+            ],
+            "enumTitles": [
+                "All Types",
+                "Domestic Business Corp",
+                "Foreign Business Corp",
+                "Domestic Not-For-Profit Corp",
+                "Foreign Not-For-Profit Corp",
+                "Domestic LLC",
+                "Foreign LLC",
+                "Domestic Limited Partnership",
+                "Foreign Limited Partnership",
+                "Domestic LLP",
+                "Foreign LLP",
+                "Domestic Professional Corporation",
+                "Foreign Professional Corporation",
+                "Domestic Professional Service LLC",
+                "Foreign Professional Service LLC",
+                "Benefit Corporation",
+                "Foreign Benefit Corporation",
+                "Real Estate Investment Trust",
+                "Foreign Real Estate Investment Trust"
+            ],
+            "default": ""
+        },
+        "startDate": {
+            "title": "Start Date (Filing Date)",
+            "type": "string",
+            "description": "Return only entities with a filing date on or after this date. Format: YYYY-MM-DD. Used for date-range and 'most recently created' searches.",
+            "editor": "datepicker",
+            "nullable": true
+        },
+        "endDate": {
+            "title": "End Date (Filing Date)",
+            "type": "string",
+            "description": "Return only entities with a filing date on or before this date. Format: YYYY-MM-DD.",
+            "editor": "datepicker",
+            "nullable": true
+        },
+        "county": {
+            "title": "County",
+            "type": "string",
+            "description": "Filter results to a specific NY county (e.g. NEW YORK, KINGS, QUEENS, NASSAU). Case-insensitive.",
+            "editor": "textfield"
+        },
+        "statusFilter": {
+            "title": "Status Filter",
+            "type": "string",
+            "description": "Filter entities by their current status. Leave blank to return all statuses.",
+            "editor": "select",
+            "enum": ["", "ACTIVE", "INACTIVE", "DISSOLVED", "REVOKED", "ANNULLED", "CANCELLED", "WITHDRAWN"],
+            "enumTitles": ["All Statuses", "Active", "Inactive", "Dissolved", "Revoked", "Annulled", "Cancelled", "Withdrawn"],
+            "default": ""
+        },
+        "scrapeDetails": {
+            "title": "Scrape Full Details",
+            "type": "boolean",
+            "description": "Visit each entity's full detail page to extract registered agent, principal office, officer names, filing history, and merger/assumed name history. Slower but more complete.",
+            "default": true
+        },
+        "maxResults": {
+            "title": "Max Results",
+            "type": "integer",
+            "description": "Maximum number of entity records to return. The NY DOS site caps search results at 500 per query; this actor paginates automatically for larger result sets.",
+            "editor": "number",
+            "default": 500,
+            "minimum": 1,
+            "maximum": 100000
+        },
+        "proxyConfiguration": {
+            "title": "Proxy Configuration",
+            "type": "object",
+            "description": "Apify proxy settings. The NY DOS site requires residential proxies to bypass its WAF. 'RESIDENTIAL' is strongly recommended.",
+            "editor": "proxy",
+            "prefill": {
+                "useApifyProxy": true,
+                "apifyProxyGroups": ["RESIDENTIAL"]
+            }
+        }
+    }
+}
