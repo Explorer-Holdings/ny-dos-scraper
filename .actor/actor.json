@@ -5,7 +5,7 @@
     "description": "Scrapes New York State business entities from the official NY DOS Public Inquiry database. Search by name, DOS ID, entity type, date range, county, and more.",
     "version": "0.1",
     "buildTag": "latest",
-    "environmentVariables": [],
+    "environmentVariables": {},
     "defaultRunOptions": {
         "build": "latest",
         "timeoutSecs": 600,
