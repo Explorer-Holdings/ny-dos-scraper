@@ -3,6 +3,10 @@
 # Apify SDK
 apify>=2.3.0,<3.0.0
 
+# Pydantic — must be >=2.7.0 to avoid "cannot specify both default and default_factory"
+# conflict between crawlee._types and older pydantic in the base image
+pydantic>=2.7.0,<3.0.0
+
 # Playwright for browser automation (required since the site blocks direct API calls)
 playwright>=1.44.0,<2.0.0
 
