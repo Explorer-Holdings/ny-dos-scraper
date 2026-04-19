@@ -319,128 +319,160 @@ class NYDOSScraper:
 
     async def _do_search(self, page: Page, term: str) -> list[dict]:
         """
-        Navigate to the search page, fill the form, and return a list of
-        result dicts parsed from the DOM table.
+        Navigate to the NY DOS search page, fill the form, submit, and return results.
+        Uses multiple strategies with debug logging to handle the Vue.js SPA.
         """
-        await page.goto(BASE_URL, wait_until="networkidle", timeout=45_000)
-        await asyncio.sleep(2)  # let Vue.js fully boot
+        # The SPA routes search through the hash — go directly to search view
+        search_url = "https://apps.dos.ny.gov/publicInquiry/#search"
+        await page.goto(search_url, wait_until="domcontentloaded", timeout=60_000)
 
-        # ── Select "Search By" type ───────────────────────────────────────
-        search_by_map = {
-            "entityName":   "Entity Name",
-            "dosId":        "DOS ID",
-            "assumedName":  "Assumed Name",
-            "assumedNameId":"Assumed Name ID",
+        # Wait for Vue to mount — poll for any input element to appear
+        try:
+            await page.wait_for_selector("input, select, button", timeout=20_000)
+        except Exception:
+            self.log.warning("Timed out waiting for form elements — dumping page state")
+
+        await asyncio.sleep(3)  # Extra wait for Vue reactivity
+
+        # ── Debug: log what's on the page ────────────────────────────────
+        page_title = await page.title()
+        page_url = page.url
+        self.log.info(f"Page title: {page_title!r}  URL: {page_url}")
+
+        inputs = await page.locator("input").count()
+        selects = await page.locator("select").count()
+        buttons = await page.locator("button").count()
+        self.log.info(f"Found: {inputs} inputs, {selects} selects, {buttons} buttons")
+
+        # Log all button texts to find the search button
+        for i in range(min(buttons, 10)):
+            try:
+                txt = await page.locator("button").nth(i).text_content()
+                self.log.info(f"  button[{i}]: {txt!r}")
+            except Exception:
+                pass
+
+        # Log all input types/placeholders
+        for i in range(min(inputs, 10)):
+            try:
+                el = page.locator("input").nth(i)
+                itype = await el.get_attribute("type") or "text"
+                iname = await el.get_attribute("name") or ""
+                iid = await el.get_attribute("id") or ""
+                iph = await el.get_attribute("placeholder") or ""
+                self.log.info(f"  input[{i}]: type={itype} id={iid!r} name={iname!r} ph={iph!r}")
+            except Exception:
+                pass
+
+        # ── Save a screenshot to KV store for debugging ───────────────────
+        try:
+            import os
+            from apify_client import ApifyClient
+            screenshot_bytes = await page.screenshot(full_page=True)
+            token = os.environ.get("APIFY_TOKEN", "")
+            kv_id = os.environ.get("APIFY_DEFAULT_KEY_VALUE_STORE_ID", "")
+            if token and kv_id:
+                ApifyClient(token).key_value_store(kv_id).set_record(
+                    "debug_screenshot.png", screenshot_bytes, content_type="image/png"
+                )
+                self.log.info("Debug screenshot saved to key-value store as 'debug_screenshot.png'")
+        except Exception as exc:
+            self.log.debug(f"Screenshot save failed: {exc}")
+
+        # ── Strategy 1: try select + text input + radio + button ──────────
+        # Search By select (first select on page)
+        search_by_label_map = {
+            "entityName": "Entity Name",
+            "dosId": "DOS ID#",
+            "assumedName": "Assumed Name",
+            "assumedNameId": "Assumed Name ID#",
         }
+        desired_label = search_by_label_map.get(self.search_by, "Entity Name")
         await self._try_select(
             page,
-            selectors=[
-                "select[id*='searchBy']",
-                "select[name*='searchBy']",
-                "select[id*='SearchBy']",
-                "select >> nth=0",
-            ],
+            selectors=["select >> nth=0"],
             value=self.search_by,
-            label=search_by_map.get(self.search_by, self.search_by),
+            label=desired_label,
         )
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.5)
 
-        # ── Fill the name / ID input ──────────────────────────────────────
-        await self._try_fill(
+        # Name input — first visible text input
+        filled = await self._try_fill(
             page,
             selectors=[
-                "input[id*='entityName']",
-                "input[id*='name']",
-                "input[placeholder*='name' i]",
-                "input[placeholder*='id' i]",
-                "input[type='text'] >> nth=0",
+                "input[type='text']",
+                "input:not([type='radio']):not([type='checkbox']):not([type='submit'])",
             ],
             value=term,
         )
-        await asyncio.sleep(0.2)
+        self.log.info(f"Name field filled: {filled}")
+        await asyncio.sleep(0.3)
 
-        # ── Name Type: Active Only vs All ─────────────────────────────────
-        name_type_val = "ACTIVE" if self.active_only else "ALL"
-        # Try radio buttons first, then select
-        active_radio = page.locator(
-            f"input[type='radio'][value='{name_type_val}'], "
-            f"input[type='radio'][value='{name_type_val.lower()}']"
-        )
-        if await active_radio.count():
-            try:
-                await active_radio.first.click()
-            except Exception:
-                pass
-        else:
-            await self._try_select(
-                page,
-                selectors=["select[id*='nameType']", "select[id*='NameType']", "select >> nth=1"],
-                value=name_type_val,
-                label="Active Only" if self.active_only else "All",
-            )
-        await asyncio.sleep(0.2)
+        # Name Type radio: Active Only vs All
+        name_type_target = "Active" if self.active_only else "All"
+        try:
+            radio = page.get_by_label(name_type_target, exact=False)
+            if await radio.count():
+                await radio.first.click()
+                self.log.info(f"Clicked name type radio: {name_type_target}")
+        except Exception:
+            pass
 
-        # ── Search Type: Begins With / Contains / Sounds Like ─────────────
-        search_type_labels = {
+        # Search Type radio
+        search_type_label_map = {
             "BEGINS_WITH": "Begins With",
-            "CONTAINS":    "Contains",
+            "CONTAINS": "Contains",
             "SOUNDS_LIKE": "Sounds Like",
         }
-        st_val = self.search_type
-        st_label = search_type_labels.get(st_val, st_val)
-        # Try radio
-        st_radio = page.locator(
-            f"input[type='radio'][value*='begins' i], "
-            f"input[type='radio'][value*='contains' i], "
-            f"input[type='radio'][value*='sounds' i]"
-        ).filter(has_text="")
-        if not await st_radio.count():
-            # Find by associated label text
-            for lbl_text, val in [("Begins With", "BEGINS_WITH"), ("Contains", "CONTAINS"), ("Sounds Like", "SOUNDS_LIKE")]:
-                if val == self.search_type:
-                    radio_by_label = page.get_by_label(lbl_text, exact=False)
-                    if await radio_by_label.count():
-                        try:
-                            await radio_by_label.first.click()
-                        except Exception:
-                            pass
-                    break
+        st_label = search_type_label_map.get(self.search_type, "Begins With")
+        try:
+            st_radio = page.get_by_label(st_label, exact=False)
+            if await st_radio.count():
+                await st_radio.first.click()
+                self.log.info(f"Clicked search type radio: {st_label}")
+        except Exception:
+            pass
 
-        # ── Entity Type dropdown ──────────────────────────────────────────
+        # Entity Type (second select if present)
         if self.entity_type:
             await self._try_select(
                 page,
-                selectors=[
-                    "select[id*='entityType']",
-                    "select[id*='EntityType']",
-                    "select[name*='entityType']",
-                    "select >> nth=-1",
-                ],
+                selectors=["select >> nth=1", "select >> nth=-1"],
                 value=self.entity_type,
                 label=self.entity_type,
             )
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.3)
 
         # ── Click Search button ───────────────────────────────────────────
         clicked = False
-        for btn_sel in [
-            "button:has-text('Search')",
-            "button:has-text('Search the Database')",
-            "input[type='submit']",
-            "button[type='submit']",
-            "button >> nth=0",
-        ]:
+        # Try every button and click the first one that looks like "search"
+        for i in range(min(buttons, 10)):
             try:
-                btn = page.locator(btn_sel).first
-                if await btn.count():
+                btn = page.locator("button").nth(i)
+                txt = (await btn.text_content() or "").strip().lower()
+                if "search" in txt or txt == "":
                     await btn.click()
+                    self.log.info(f"Clicked button[{i}]: {txt!r}")
                     clicked = True
                     break
             except Exception:
                 pass
 
         if not clicked:
-            self.log.warning("Could not find Search button — trying Enter key")
+            # Try input[type=submit] or any button
+            for sel in ["input[type='submit']", "button[type='submit']", "button >> nth=0"]:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count():
+                        await el.click()
+                        clicked = True
+                        self.log.info(f"Clicked via selector: {sel}")
+                        break
+                except Exception:
+                    pass
+
+        if not clicked:
+            self.log.warning("No button found — pressing Enter")
             await page.keyboard.press("Enter")
 
         # ── Wait for results ──────────────────────────────────────────────
@@ -448,9 +480,18 @@ class NYDOSScraper:
             await page.wait_for_load_state("networkidle", timeout=30_000)
         except Exception:
             pass
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
 
-        # ── Parse DOM table ───────────────────────────────────────────────
+        # Log post-search state
+        post_buttons = await page.locator("button").count()
+        post_inputs = await page.locator("input").count()
+        tables = await page.locator("table").count()
+        rows = await page.locator("tr").count()
+        self.log.info(
+            f"After search: {post_buttons} buttons, {post_inputs} inputs, "
+            f"{tables} tables, {rows} table rows"
+        )
+
         return await self._parse_results_table(page)
 
     # ── DOM table parser ──────────────────────────────────────────────────────
