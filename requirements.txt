@@ -1,8 +1,5 @@
-# Apify SDK — pulls in crawlee automatically
-apify>=2.3.0,<3.0.0
-
-# Pydantic v2 — must be installed before crawlee is imported
-pydantic>=2.7.0,<3.0.0
+# Use apify-client (simple REST client) instead of apify SDK (which pulls in crawlee)
+apify-client>=1.7.0,<2.0.0
 
 # Playwright for browser automation
 playwright>=1.44.0,<2.0.0

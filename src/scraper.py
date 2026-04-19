@@ -36,7 +36,7 @@ from datetime import datetime, date
 from typing import Any
 from urllib.parse import urlencode, urljoin
 
-from apify import Actor
+# apify SDK removed — using apify-client directly
 from playwright.async_api import (
     Browser,
     BrowserContext,
@@ -114,7 +114,7 @@ def _clean(text: str | None) -> str:
 class NYDOSScraper:
     """Playwright-based scraper for the NY DOS Public Inquiry portal."""
 
-    def __init__(self, input_data: dict[str, Any]) -> None:
+    def __init__(self, input_data: dict[str, Any], push_callback, logger) -> None:
         # Search parameters
         self.search_by: str = input_data.get("searchBy", "entityName")
         self.name_search: str = input_data.get("nameSearch", "").strip()
@@ -137,6 +137,8 @@ class NYDOSScraper:
         self._api_base: str | None = None          # discovered REST endpoint base
         self._api_cookies: dict[str, str] = {}    # session cookies for direct calls
         self._api_headers: dict[str, str] = {}    # extra headers for direct calls
+        self._push = push_callback
+        self.log = logger
 
     # ── Public entry point ────────────────────────────────────────────────────
 
@@ -164,20 +166,17 @@ class NYDOSScraper:
     # ── Proxy setup ───────────────────────────────────────────────────────────
 
     async def _get_proxy_url(self) -> str | None:
-        try:
-            proxy_cfg = await Actor.create_proxy_configuration(
-                actor_proxy_input=self.proxy_config_input or {
-                    "useApifyProxy": True,
-                    "apifyProxyGroups": ["RESIDENTIAL"],
-                }
-            )
-            if proxy_cfg:
-                url = await proxy_cfg.new_url()
-                Actor.log.info(f"Using proxy: {url[:30]}…")
-                return url
-        except Exception as exc:
-            Actor.log.warning(f"Proxy setup failed ({exc}); proceeding without proxy")
-        return None
+        """Build an Apify residential proxy URL directly from env vars."""
+        import os
+        token = os.environ.get("APIFY_PROXY_PASSWORD", os.environ.get("APIFY_TOKEN", ""))
+        if not token:
+            self.log.warning("No APIFY_TOKEN found — running without proxy (may be blocked)")
+            return None
+        groups = self.proxy_config_input.get("apifyProxyGroups", ["RESIDENTIAL"])
+        group_str = "+".join(groups) if groups else "RESIDENTIAL"
+        url = f"http://groups-{group_str}:{token}@proxy.apify.com:8000"
+        self.log.info(f"Using Apify proxy group: {group_str}")
+        return url
 
     # ── Browser context factory ───────────────────────────────────────────────
 
@@ -214,7 +213,7 @@ class NYDOSScraper:
         else:
             # Broad sweep: search A–Z and 0–9 to capture everything,
             # then apply date/county/status filters client-side.
-            Actor.log.info(
+            self.log.info(
                 "No name search provided — running alphabetical sweep (A–Z, 0–9). "
                 "This is slow; consider narrowing with nameSearch."
             )
@@ -231,7 +230,7 @@ class NYDOSScraper:
             if self._count >= self.max_results:
                 break
 
-            Actor.log.info(
+            self.log.info(
                 f"Searching '{term}' | type={self.search_type} | "
                 f"active_only={self.active_only} | entity_type={self.entity_type!r}"
             )
@@ -261,7 +260,7 @@ class NYDOSScraper:
                             if not self._api_base:
                                 # Strip query string to get base
                                 self._api_base = re.sub(r"\?.*", "", resp.url)
-                                Actor.log.info(
+                                self.log.info(
                                     f"Discovered API endpoint: {self._api_base}"
                                 )
                 except Exception:
@@ -278,7 +277,7 @@ class NYDOSScraper:
                     # Normalise field names from whatever the API returns
                     search_results = [self._normalise_api_record(r) for r in raw_list]
 
-                Actor.log.info(f"  → {len(search_results)} rows found for '{term}'")
+                self.log.info(f"  → {len(search_results)} rows found for '{term}'")
 
                 for entity in search_results:
                     if self._count >= self.max_results:
@@ -301,16 +300,16 @@ class NYDOSScraper:
                     entity["url"] = ENTITY_DETAIL_HASH.format(dos_id=dos_id)
                     entity["scrapedAt"] = datetime.utcnow().isoformat() + "Z"
 
-                    await Actor.push_data(entity)
+                    await self._push(entity)
                     self._count += 1
 
                     if self._count % 25 == 0:
-                        Actor.log.info(f"  ✔ {self._count} records saved so far…")
+                        self.log.info(f"  ✔ {self._count} records saved so far…")
 
                     await asyncio.sleep(NAV_DELAY)
 
             except Exception as exc:
-                Actor.log.error(f"Error searching for '{term}': {exc}")
+                self.log.error(f"Error searching for '{term}': {exc}")
 
             finally:
                 await page.close()
@@ -441,7 +440,7 @@ class NYDOSScraper:
                 pass
 
         if not clicked:
-            Actor.log.warning("Could not find Search button — trying Enter key")
+            self.log.warning("Could not find Search button — trying Enter key")
             await page.keyboard.press("Enter")
 
         # ── Wait for results ──────────────────────────────────────────────
@@ -478,7 +477,7 @@ class NYDOSScraper:
             table = page.locator("[role='table'], .results, .entity-list").first
 
         if not await table.count():
-            Actor.log.warning("No results table found on page.")
+            self.log.warning("No results table found on page.")
             return results
 
         rows = table.locator("tbody tr, [role='row']")
@@ -521,7 +520,7 @@ class NYDOSScraper:
                 if entity.get("entityName"):
                     results.append(entity)
             except Exception as exc:
-                Actor.log.debug(f"Row {i} parse error: {exc}")
+                self.log.debug(f"Row {i} parse error: {exc}")
 
         return results
 
@@ -578,7 +577,7 @@ class NYDOSScraper:
             )
 
         except Exception as exc:
-            Actor.log.warning(f"Detail page error for DOS ID {dos_id}: {exc}")
+            self.log.warning(f"Detail page error for DOS ID {dos_id}: {exc}")
 
         return detail
 
