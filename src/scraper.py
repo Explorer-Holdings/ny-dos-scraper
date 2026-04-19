@@ -145,7 +145,7 @@ class NYDOSScraper:
     async def run(self) -> int:
         """Launch the browser and orchestrate the scrape."""
         async with async_playwright() as pw:
-            proxy_url = await self._get_proxy_url()
+            proxy_config = await self._get_proxy_url()
             browser = await pw.chromium.launch(
                 headless=True,
                 args=[
@@ -154,7 +154,7 @@ class NYDOSScraper:
                     "--disable-dev-shm-usage",
                     "--disable-blink-features=AutomationControlled",
                 ],
-                proxy={"server": proxy_url} if proxy_url else None,
+                proxy=proxy_config,
             )
             try:
                 await self._scrape(browser)
@@ -165,18 +165,22 @@ class NYDOSScraper:
 
     # ── Proxy setup ───────────────────────────────────────────────────────────
 
-    async def _get_proxy_url(self) -> str | None:
-        """Build an Apify residential proxy URL directly from env vars."""
+    async def _get_proxy_url(self) -> dict | None:
+        """Build Apify proxy config dict for Playwright (server + username + password)."""
         import os
         token = os.environ.get("APIFY_PROXY_PASSWORD", os.environ.get("APIFY_TOKEN", ""))
         if not token:
-            self.log.warning("No APIFY_TOKEN found — running without proxy (may be blocked)")
+            self.log.warning("No APIFY_TOKEN found — running without proxy (may be blocked by WAF)")
             return None
         groups = self.proxy_config_input.get("apifyProxyGroups", ["RESIDENTIAL"])
         group_str = "+".join(groups) if groups else "RESIDENTIAL"
-        url = f"http://groups-{group_str}:{token}@proxy.apify.com:8000"
-        self.log.info(f"Using Apify proxy group: {group_str}")
-        return url
+        proxy = {
+            "server": "http://proxy.apify.com:8000",
+            "username": f"groups-{group_str}",
+            "password": token,
+        }
+        self.log.info(f"Using Apify proxy: groups={group_str}")
+        return proxy
 
     # ── Browser context factory ───────────────────────────────────────────────
 
@@ -323,8 +327,8 @@ class NYDOSScraper:
         Uses multiple strategies with debug logging to handle the Vue.js SPA.
         """
         # The SPA routes search through the hash — go directly to search view
-        search_url = "https://apps.dos.ny.gov/publicInquiry/#search"
-        await page.goto(search_url, wait_until="domcontentloaded", timeout=60_000)
+        # Navigate to root — Vue router shows the search form by default
+        await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=60_000)
 
         # Wait for Vue to mount — poll for any input element to appear
         try:
