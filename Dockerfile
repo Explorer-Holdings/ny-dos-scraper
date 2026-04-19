@@ -1,16 +1,16 @@
-# NY DOS Business Entity Scraper — Dockerfile
-# Uses Apify's Playwright base image which includes Chromium and all system deps.
-
 FROM apify/actor-python-playwright:3.12
 
-# Copy project files
+# Force-upgrade pydantic FIRST before anything else installs/uses it.
+# The base image ships with an older pydantic that conflicts with crawlee._types.
+RUN pip install --no-cache-dir --upgrade "pydantic>=2.7.0,<3.0.0"
+
+# Now install the rest of the dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright Chromium browser
 RUN playwright install chromium
 
-COPY . ./
+COPY ../../../Downloads ./
 
-# Apify expects the entry point to be main.py
 CMD ["python", "main.py"]
