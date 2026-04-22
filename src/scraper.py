@@ -167,21 +167,29 @@ class NYDOSScraper:
 
     async def _get_proxy_url(self) -> dict | None:
         """
-        Build Apify proxy config dict for Playwright.
-        Apify sets APIFY_PROXY_PASSWORD automatically in the actor environment.
-        This is DIFFERENT from APIFY_TOKEN.
+        Build proxy config for Playwright.
+        RESIDENTIAL requires a paid Apify plan — falls back to no proxy so the
+        scraping logic can be verified. Switch apifyProxyGroups to ['SHADER']
+        for free datacenter proxies if the site blocks direct connections.
         """
         import os
-        # Apify injects this automatically when running in their infrastructure
         proxy_password = os.environ.get("APIFY_PROXY_PASSWORD", "")
-        if not proxy_password:
-            self.log.warning(
-                "APIFY_PROXY_PASSWORD not set — running WITHOUT proxy. "
-                "The NY DOS WAF may block datacenter IPs."
-            )
+        use_proxy = self.proxy_config_input.get("useApifyProxy", False)
+        groups = self.proxy_config_input.get("apifyProxyGroups", [])
+
+        # Skip proxy entirely if not configured or no password
+        if not use_proxy or not proxy_password or not groups:
+            self.log.info("Running WITHOUT proxy — direct connection.")
             return None
-        groups = self.proxy_config_input.get("apifyProxyGroups", ["RESIDENTIAL"])
-        group_str = "+".join(groups) if groups else "RESIDENTIAL"
+
+        # RESIDENTIAL requires paid plan; SHADER is free datacenter
+        group_str = "+".join(groups)
+        if "RESIDENTIAL" in groups:
+            self.log.warning(
+                "RESIDENTIAL proxy requires a paid Apify plan. "
+                "If this fails, change apifyProxyGroups to ['SHADER'] in the input."
+            )
+
         proxy = {
             "server": "http://proxy.apify.com:8000",
             "username": f"groups-{group_str}",
