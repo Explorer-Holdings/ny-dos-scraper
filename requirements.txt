@@ -1,8 +1,5 @@
-# Use apify-client (simple REST client) instead of apify SDK (which pulls in crawlee)
+# Apify client (simple REST — no crawlee, no pydantic conflict)
 apify-client>=1.7.0,<2.0.0
 
-# Playwright for browser automation
-playwright>=1.44.0,<2.0.0
-
-# Async HTTP client
-httpx[http2]>=0.27.0,<1.0.0
+# Async HTTP client for SODA API calls
+httpx>=0.27.0,<1.0.0

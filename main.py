@@ -1,6 +1,6 @@
 """
 NY DOS Business Entity Scraper — Apify Actor entry point.
-Uses apify-client directly to avoid the apify SDK -> crawlee -> pydantic conflict.
+Uses NY Open Data SODA API — no browser, no proxy required.
 """
 
 import asyncio
@@ -19,21 +19,18 @@ log = logging.getLogger(__name__)
 
 
 def get_input() -> dict:
-    """Read actor input from the Apify key-value store."""
     token = os.environ.get("APIFY_TOKEN", "")
     kv_store_id = os.environ.get("APIFY_DEFAULT_KEY_VALUE_STORE_ID", "")
     input_key = os.environ.get("ACTOR_INPUT_KEY", "INPUT")
 
     if token and kv_store_id:
         try:
-            client = ApifyClient(token)
-            record = client.key_value_store(kv_store_id).get_record(input_key)
+            record = ApifyClient(token).key_value_store(kv_store_id).get_record(input_key)
             if record and record.get("value"):
                 return record["value"]
         except Exception as exc:
             log.warning(f"Could not read input from KV store: {exc}")
 
-    # Fallback: local file (for local testing)
     local_input = os.path.join(
         os.environ.get("APIFY_LOCAL_STORAGE_DIR", "./apify_storage"),
         "key_value_stores", "default", f"{input_key}.json",
@@ -41,12 +38,10 @@ def get_input() -> dict:
     if os.path.exists(local_input):
         with open(local_input) as f:
             return json.load(f)
-
     return {}
 
 
 def make_push_callback(token: str, dataset_id: str):
-    """Return an async function that pushes one item to the Apify dataset."""
     client = ApifyClient(token) if token else None
 
     async def push(item: dict) -> None:
@@ -57,7 +52,6 @@ def make_push_callback(token: str, dataset_id: str):
                 log.warning(f"Failed to push item: {exc}")
                 log.info(f"RESULT: {json.dumps(item)}")
         else:
-            # Local / no-token mode: just print
             log.info(f"RESULT: {json.dumps(item)}")
 
     return push
