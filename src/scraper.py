@@ -166,18 +166,26 @@ class NYDOSScraper:
     # ── Proxy setup ───────────────────────────────────────────────────────────
 
     async def _get_proxy_url(self) -> dict | None:
-        """Build Apify proxy config dict for Playwright (server + username + password)."""
+        """
+        Build Apify proxy config dict for Playwright.
+        Apify sets APIFY_PROXY_PASSWORD automatically in the actor environment.
+        This is DIFFERENT from APIFY_TOKEN.
+        """
         import os
-        token = os.environ.get("APIFY_PROXY_PASSWORD", os.environ.get("APIFY_TOKEN", ""))
-        if not token:
-            self.log.warning("No APIFY_TOKEN found — running without proxy (may be blocked by WAF)")
+        # Apify injects this automatically when running in their infrastructure
+        proxy_password = os.environ.get("APIFY_PROXY_PASSWORD", "")
+        if not proxy_password:
+            self.log.warning(
+                "APIFY_PROXY_PASSWORD not set — running WITHOUT proxy. "
+                "The NY DOS WAF may block datacenter IPs."
+            )
             return None
         groups = self.proxy_config_input.get("apifyProxyGroups", ["RESIDENTIAL"])
         group_str = "+".join(groups) if groups else "RESIDENTIAL"
         proxy = {
             "server": "http://proxy.apify.com:8000",
             "username": f"groups-{group_str}",
-            "password": token,
+            "password": proxy_password,
         }
         self.log.info(f"Using Apify proxy: groups={group_str}")
         return proxy
